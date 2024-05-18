@@ -34,11 +34,16 @@ public class MQTTSourceTask extends SourceTask implements IMqttMessageListener {
             String clientId = config.getString(MQTTSourceConnectorConfig.CLIENTID);
             log.info("Connecting with clientID=" + clientId);
             mqttClient = new MqttClient(config.getString(MQTTSourceConnectorConfig.BROKER), clientId, new MemoryPersistence());
-            mqttClient.setCallback(new MqttCallback() {
+            mqttClient.setCallback(new MqttCallbackExtended() {
+                @Override
+                public void connectComplete(boolean b, String s) {
+                    log.info(String.format("MQTT Connection Complete %b -> %s", b, s));
+                    subscribe(mqttClient);
+                }
+
                 @Override
                 public void connectionLost(Throwable cause) {
                     log.error("MQTT Connection Lost", cause);
-                    connectAndSubscribe(mqttClient);
                 }
 
                 @Override
@@ -52,7 +57,7 @@ public class MQTTSourceTask extends SourceTask implements IMqttMessageListener {
                 }
             });
 
-            connectAndSubscribe(mqttClient);
+            connect(mqttClient);
         } catch (MqttException e) {
             throw new ConnectException(e);
         }
@@ -69,58 +74,49 @@ public class MQTTSourceTask extends SourceTask implements IMqttMessageListener {
         }
     }
 
-    private void connectAndSubscribe(IMqttClient mqttClient) {
-        connect(mqttClient);
-        subscribe(mqttClient);
-    }
-
     private void subscribe(IMqttClient mqttClient) {
         String topicSubscription = this.config.getString(MQTTSourceConnectorConfig.MQTT_TOPIC);
-        while (true) {
-            try {
-                int qosLevel = this.config.getInt(MQTTSourceConnectorConfig.MQTT_QOS);
+        try {
+            int qosLevel = this.config.getInt(MQTTSourceConnectorConfig.MQTT_QOS);
 
-                log.info("Subscribing to " + topicSubscription + " with QOS " + qosLevel);
-                mqttClient.subscribe(topicSubscription, qosLevel, (topic, message) -> {
-                    onMessageRecieved("subscribeCallback", topic, message);
-                });
-                log.info("Subscribed to " + topicSubscription + " with QOS " + qosLevel);
-                return;
-            } catch (Exception e) {
-                log.error("Error subscribing to topic " + topicSubscription, e);
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException ex) {
-                }
+            log.info("Subscribing to " + topicSubscription + " with QOS " + qosLevel);
+            mqttClient.subscribe(topicSubscription, qosLevel, (topic, message) -> {
+                onMessageRecieved("subscribeCallback", topic, message);
+            });
+            log.info("Subscribed to " + topicSubscription + " with QOS " + qosLevel);
+            return;
+        } catch (Exception e) {
+            log.error("Error subscribing to topic " + topicSubscription, e);
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException ex) {
             }
         }
     }
 
     private void connect(IMqttClient mqttClient) {
-        while (true) {
+        try {
+            log.info("Connecting to MQTT Broker " + config.getString(MQTTSourceConnectorConfig.BROKER));
+            MqttConnectOptions connOpts = new MqttConnectOptions();
+            connOpts.setCleanSession(config.getBoolean(MQTTSourceConnectorConfig.MQTT_CLEANSESSION));
+            connOpts.setKeepAliveInterval(config.getInt(MQTTSourceConnectorConfig.MQTT_KEEPALIVEINTERVAL));
+            connOpts.setConnectionTimeout(config.getInt(MQTTSourceConnectorConfig.MQTT_CONNECTIONTIMEOUT));
+            connOpts.setAutomaticReconnect(config.getBoolean(MQTTSourceConnectorConfig.MQTT_ARC));
+
+            if (!config.getString(MQTTSourceConnectorConfig.MQTT_USERNAME).equals("") && !config.getPassword(MQTTSourceConnectorConfig.MQTT_PASSWORD).equals("")) {
+                connOpts.setUserName(config.getString(MQTTSourceConnectorConfig.MQTT_USERNAME));
+                connOpts.setPassword(config.getPassword(MQTTSourceConnectorConfig.MQTT_PASSWORD).value().toCharArray());
+            }
+
+            log.info("MQTT Connection properties: " + connOpts);
+            mqttClient.connect(connOpts);
+            log.info("Connected to MQTT Broker 1");
+            return;
+        } catch (Exception e) {
+            log.error("Error establishing connection", e);
             try {
-                log.info("Connecting to MQTT Broker " + config.getString(MQTTSourceConnectorConfig.BROKER));
-                MqttConnectOptions connOpts = new MqttConnectOptions();
-                connOpts.setCleanSession(config.getBoolean(MQTTSourceConnectorConfig.MQTT_CLEANSESSION));
-                connOpts.setKeepAliveInterval(config.getInt(MQTTSourceConnectorConfig.MQTT_KEEPALIVEINTERVAL));
-                connOpts.setConnectionTimeout(config.getInt(MQTTSourceConnectorConfig.MQTT_CONNECTIONTIMEOUT));
-                connOpts.setAutomaticReconnect(config.getBoolean(MQTTSourceConnectorConfig.MQTT_ARC));
-
-                if (!config.getString(MQTTSourceConnectorConfig.MQTT_USERNAME).equals("") && !config.getPassword(MQTTSourceConnectorConfig.MQTT_PASSWORD).equals("")) {
-                    connOpts.setUserName(config.getString(MQTTSourceConnectorConfig.MQTT_USERNAME));
-                    connOpts.setPassword(config.getPassword(MQTTSourceConnectorConfig.MQTT_PASSWORD).value().toCharArray());
-                }
-
-                log.info("MQTT Connection properties: " + connOpts);
-                mqttClient.connect(connOpts);
-                log.info("Connected to MQTT Broker 1");
-                return;
-            } catch (Exception e) {
-                log.error("Error establishing connection", e);
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException ex) {
-                }
+                Thread.sleep(1000);
+            } catch (InterruptedException ex) {
             }
         }
     }
