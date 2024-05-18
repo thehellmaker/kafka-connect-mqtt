@@ -38,6 +38,7 @@ public class MQTTSourceTask extends SourceTask implements IMqttMessageListener {
                 @Override
                 public void connectionLost(Throwable cause) {
                     log.error("MQTT Connection Lost", cause);
+                    connectAndSubscribe(mqttClient);
                 }
 
                 @Override
@@ -50,46 +51,78 @@ public class MQTTSourceTask extends SourceTask implements IMqttMessageListener {
                     log.info("MQTT Delivery Complete"+ token);
                 }
             });
-            log.info("Connecting to MQTT Broker " + config.getString(MQTTSourceConnectorConfig.BROKER));
-            connect(mqttClient);
-            log.info("Connected to MQTT Broker");
 
-            String topicSubscription = this.config.getString(MQTTSourceConnectorConfig.MQTT_TOPIC);
-            int qosLevel = this.config.getInt(MQTTSourceConnectorConfig.MQTT_QOS);
-
-            log.info("Subscribing to " + topicSubscription + " with QOS " + qosLevel);
-            mqttClient.subscribe(topicSubscription, qosLevel, (topic, message) -> {
-                onMessageRecieved("subscribeCallback", topic, message);
-            });
-            log.info("Subscribed to " + topicSubscription + " with QOS " + qosLevel);
-        }
-        catch (MqttException e) {
+            connectAndSubscribe(mqttClient);
+        } catch (MqttException e) {
             throw new ConnectException(e);
         }
     }
 
-    public void onMessageRecieved(String source, String topic, MqttMessage message) throws Exception {
-        log.info(String.format("Message arrived in connector from topic %s from source %s", topic, source));
-        SourceRecord record = mqttSourceConverter.convert(topic, message);
-        log.info(String.format("Converted record: %s, from source: %s", record, source));
-        sourceRecordDeque.add(record);
+    public void onMessageRecieved(String source, String topic, MqttMessage message) {
+        try {
+            log.info(String.format("Message arrived in connector from topic %s from source %s", topic, source));
+            SourceRecord record = mqttSourceConverter.convert(topic, message);
+            log.info(String.format("ATOM8 Converted record: %s, from source: %s", record, source));
+            sourceRecordDeque.add(record);
+        } catch(Exception e) {
+            log.error("Error on message received ", e);
+        }
     }
 
-    private void connect(IMqttClient mqttClient) throws MqttException{
-        MqttConnectOptions connOpts = new MqttConnectOptions();
-        connOpts.setCleanSession(config.getBoolean(MQTTSourceConnectorConfig.MQTT_CLEANSESSION));
-        connOpts.setKeepAliveInterval(config.getInt(MQTTSourceConnectorConfig.MQTT_KEEPALIVEINTERVAL));
-        connOpts.setConnectionTimeout(config.getInt(MQTTSourceConnectorConfig.MQTT_CONNECTIONTIMEOUT));
-        connOpts.setAutomaticReconnect(config.getBoolean(MQTTSourceConnectorConfig.MQTT_ARC));
+    private void connectAndSubscribe(IMqttClient mqttClient) {
+        connect(mqttClient);
+        subscribe(mqttClient);
+    }
 
-        if (!config.getString(MQTTSourceConnectorConfig.MQTT_USERNAME).equals("") && !config.getPassword(MQTTSourceConnectorConfig.MQTT_PASSWORD).equals("")) {
-            connOpts.setUserName(config.getString(MQTTSourceConnectorConfig.MQTT_USERNAME));
-            connOpts.setPassword(config.getPassword(MQTTSourceConnectorConfig.MQTT_PASSWORD).value().toCharArray());
+    private void subscribe(IMqttClient mqttClient) {
+        String topicSubscription = this.config.getString(MQTTSourceConnectorConfig.MQTT_TOPIC);
+        while (true) {
+            try {
+                int qosLevel = this.config.getInt(MQTTSourceConnectorConfig.MQTT_QOS);
+
+                log.info("Subscribing to " + topicSubscription + " with QOS " + qosLevel);
+                mqttClient.subscribe(topicSubscription, qosLevel, (topic, message) -> {
+                    onMessageRecieved("subscribeCallback", topic, message);
+                });
+                log.info("Subscribed to " + topicSubscription + " with QOS " + qosLevel);
+                return;
+            } catch (Exception e) {
+                log.error("Error subscribing to topic " + topicSubscription, e);
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ex) {
+                }
+            }
         }
+    }
 
-        log.info("MQTT Connection properties: " + connOpts);
+    private void connect(IMqttClient mqttClient) {
+        while (true) {
+            try {
+                log.info("Connecting to MQTT Broker " + config.getString(MQTTSourceConnectorConfig.BROKER));
+                MqttConnectOptions connOpts = new MqttConnectOptions();
+                connOpts.setCleanSession(config.getBoolean(MQTTSourceConnectorConfig.MQTT_CLEANSESSION));
+                connOpts.setKeepAliveInterval(config.getInt(MQTTSourceConnectorConfig.MQTT_KEEPALIVEINTERVAL));
+                connOpts.setConnectionTimeout(config.getInt(MQTTSourceConnectorConfig.MQTT_CONNECTIONTIMEOUT));
+                connOpts.setAutomaticReconnect(config.getBoolean(MQTTSourceConnectorConfig.MQTT_ARC));
 
-        mqttClient.connect(connOpts);
+                if (!config.getString(MQTTSourceConnectorConfig.MQTT_USERNAME).equals("") && !config.getPassword(MQTTSourceConnectorConfig.MQTT_PASSWORD).equals("")) {
+                    connOpts.setUserName(config.getString(MQTTSourceConnectorConfig.MQTT_USERNAME));
+                    connOpts.setPassword(config.getPassword(MQTTSourceConnectorConfig.MQTT_PASSWORD).value().toCharArray());
+                }
+
+                log.info("MQTT Connection properties: " + connOpts);
+                mqttClient.connect(connOpts);
+                log.info("Connected to MQTT Broker 1");
+                return;
+            } catch (Exception e) {
+                log.error("Error establishing connection", e);
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ex) {
+                }
+            }
+        }
     }
 
     /**

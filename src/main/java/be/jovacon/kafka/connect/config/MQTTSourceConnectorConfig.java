@@ -70,17 +70,17 @@ public class MQTTSourceConnectorConfig extends AbstractConfig {
                         MQTT_QOS_DOC)
                 .define(MQTT_ARC,
                         ConfigDef.Type.BOOLEAN,
-                        true,
+                        false,
                         ConfigDef.Importance.MEDIUM,
                         MQTT_ARC_DOC)
                 .define(MQTT_KEEPALIVEINTERVAL,
                         ConfigDef.Type.INT,
-                        60,
+                        30,
                         ConfigDef.Importance.LOW,
                         MQTT_KEEPALIVEINTERVAL_DOC)
                 .define(MQTT_CLEANSESSION,
                         ConfigDef.Type.BOOLEAN,
-                        true,
+                        false,
                         ConfigDef.Importance.LOW,
                         MQTT_CLEANSESSION_DOC)
                 .define(MQTT_CONNECTIONTIMEOUT,
