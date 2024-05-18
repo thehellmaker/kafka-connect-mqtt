@@ -15,11 +15,9 @@ import java.util.*;
 public class MQTTSourceConnector extends SourceConnector {
 
     private static final Logger log = LoggerFactory.getLogger(MQTTSourceConnector.class);
-    private MQTTSourceConnectorConfig mqttSourceConnectorConfig;
     private Map<String, String> configProps;
 
     public void start(Map<String, String> map) {
-        this.mqttSourceConnectorConfig = new MQTTSourceConnectorConfig(map);
         this.configProps = Collections.unmodifiableMap(map);
     }
 
